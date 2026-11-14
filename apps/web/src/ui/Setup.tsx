@@ -18,6 +18,9 @@ export function Setup() {
         <MenuScene />
       </div>
       <div className="setup-card panel">
+        <a className="back-hub" href="#/">
+          ← 3ajib Games
+        </a>
         <h1 className="logo">
           <span className="word">Monopoly</span>
           <span className="edition">3ajib Edition</span>

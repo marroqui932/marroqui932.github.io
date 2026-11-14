@@ -22,7 +22,6 @@ import { PLAYER_COLORS, TOKENS } from "./tokens";
 
 const LOCAL_SAVE = "monopoly-iso:partie";
 const HOST_SAVE = "monopoly-iso:salle";
-const PROFILE_KEY = "monopoly-iso:profil";
 
 export type Mode = "local" | "host" | "client";
 
@@ -116,22 +115,8 @@ export function loadHostSave(): HostSave | null {
   return load<HostSave>(HOST_SAVE);
 }
 
-export function loadProfile(): Profile & { clientId: string; lastRoom?: string } {
-  const saved = load<Profile & { clientId: string; lastRoom?: string }>(PROFILE_KEY);
-  if (saved?.clientId) return saved;
-  const p = {
-    clientId: `c-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
-    name: "",
-    color: PLAYER_COLORS[Math.floor(Math.random() * 6)]!.value,
-    token: TOKENS[Math.floor(Math.random() * TOKENS.length)]!.id,
-  };
-  store(PROFILE_KEY, p);
-  return p;
-}
-
-export function saveProfile(p: Partial<Profile> & { lastRoom?: string }) {
-  store(PROFILE_KEY, { ...loadProfile(), ...p });
-}
+export { loadProfile, saveProfile } from "./profile";
+import { loadProfile, saveProfile } from "./profile";
 
 /** Met le code de la salle dans l'adresse : un rechargement de page ramène dans la salle. */
 function setUrlRoom(code: string | null) {

@@ -11,6 +11,7 @@
     "test": "echo \"(pas de tests pour l'interface)\""
   },
   "dependencies": {
+    "@3ajib/uno": "workspace:*",
     "@fontsource/bungee": "^5.3.0",
     "@fontsource/rubik": "^5.3.0",
     "@monopoly/engine": "workspace:*",

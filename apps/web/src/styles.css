@@ -108,6 +108,8 @@ button, input, select { font: inherit; color: inherit; }
   background: radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(13, 14, 36, 0.6));
   pointer-events: none;
 }
+.back-hub { display: inline-block; color: var(--muted); text-decoration: none; font-weight: 600; margin-bottom: 12px; }
+.back-hub:hover { color: var(--text); }
 .setup-card { position: relative; z-index: 1; width: min(700px, 100%); padding: 28px 30px 26px; background: var(--glass-strong); }
 .logo { margin: 0 0 22px; line-height: 0.9; }
 .logo .word {

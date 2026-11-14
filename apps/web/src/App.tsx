@@ -1,12 +1,34 @@
-import { useGame } from "./store";
-import { Setup } from "./ui/Setup";
-import { GameView } from "./ui/GameView";
-import { LobbyView } from "./ui/Lobby";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { Hub } from "./hub/Hub";
+
+// Chaque jeu n'est chargé que lorsqu'on l'ouvre : le hub s'affiche tout de suite.
+const MonopolyApp = lazy(() => import("./MonopolyApp").then((m) => ({ default: m.MonopolyApp })));
+const UnoApp = lazy(() => import("./games/uno/UnoApp").then((m) => ({ default: m.UnoApp })));
+
+function useRoute(): string {
+  const read = () => window.location.hash.replace(/^#\/?/, "").split("?")[0] ?? "";
+  const [route, setRoute] = useState(read);
+  useEffect(() => {
+    const on = () => setRoute(read());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  return route;
+}
+
+function Loading() {
+  return (
+    <div className="loading-screen">
+      <span className="loading-logo">3AJIB GAMES</span>
+      <span className="loading-bar" />
+    </div>
+  );
+}
 
 export function App() {
-  const game = useGame((s) => s.game);
-  const mode = useGame((s) => s.mode);
-  if (game) return <GameView game={game} />;
-  if (mode !== "local") return <LobbyView />;
-  return <Setup />;
+  const route = useRoute();
+  let page = <Hub />;
+  if (route === "monopoly") page = <MonopolyApp />;
+  else if (route === "uno") page = <UnoApp />;
+  return <Suspense fallback={<Loading />}>{page}</Suspense>;
 }

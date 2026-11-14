@@ -1,4 +1,47 @@
-# Monopoly Iso
+# 3ajib Games
+
+Nos jeux entre potes, jouables dans le navigateur : **https://marroqui932.github.io/**
+
+| Jeu | Adresse | Joueurs |
+|---|---|---|
+| Monopoly 3ajib Edition (3D isométrique) | `/#/monopoly` | 2 à 6 |
+| Uno (règles officielles) | `/#/uno` | 2 à 10 |
+
+Le hub garde un **profil commun** (pseudo, couleur, pion) et permet de **rejoindre n'importe quelle
+salle avec son code** : le site demande à la salle quel jeu elle héberge et y emmène directement.
+
+## Organisation du dépôt
+
+```
+apps/web               Le site : hub + tous les jeux (un seul déploiement GitHub Pages)
+  src/hub/             Page d'accueil 3ajib Games
+  src/games/uno/       Interface et salle en ligne du Uno
+  src/ (reste)         Interface du Monopoly (scène 3D, salle, fiches…)
+  src/net.ts           Salles en ligne pair-à-pair, communes à tous les jeux
+  src/profile.ts       Profil commun
+packages/engine        Moteur de règles du Monopoly (pur TypeScript, testé)
+packages/uno           Moteur de règles du Uno (pur TypeScript, testé)
+```
+
+Chaque jeu = un moteur de règles pur dans `packages/` (état + actions, sans affichage ni réseau)
++ une interface dans `apps/web/src/games/<jeu>/`. Les salles en ligne, le profil, la typo, les
+boutons et les sons sont partagés.
+
+### Uno : règles implémentées
+
+- 108 cartes, 7 chacun, donneur tiré au sort ; première carte : un +4 repart dans le paquet,
+  un joker fait choisir la couleur au premier joueur, Passe / Inversion / +2 s'appliquent
+- On suit la couleur, le chiffre ou le symbole ; joker toujours posable
+- **+4** posable seulement sans carte de la couleur demandée — bluff possible, **contestation** :
+  bluffeur démasqué = il pioche 4 ; contestation ratée = 6 cartes
+- Pioche d'une seule carte, jouable immédiatement si elle va (sinon le tour passe)
+- **« UNO ! »** à l'avant-dernière carte, sinon **contre-UNO** (+2) tant que le suivant n'a pas joué
+- Inversion à 2 joueurs = rejouer ; pioche vide = défausse remélangée
+- Fin de manche : le gagnant marque les cartes des autres (chiffres = valeur, actions = 20,
+  jokers = 50) ; partie en 500 points (ou 250, ou une seule manche)
+- Chaque joueur ne reçoit que **sa** main : l'hôte n'envoie aux autres que le nombre de cartes
+
+# Monopoly 3ajib Edition
 
 Un Monopoly entre potes, en 3D low-poly et vue isométrique, jouable dans le navigateur.
 
@@ -76,7 +119,7 @@ pnpm --filter @monopoly/web dev   # puis ouvrir http://localhost:5173
 Chaque push sur `main` lance les tests, construit le jeu et le publie sur GitHub Pages
 (`.github/workflows/pages.yml`). Réglage à faire une seule fois sur GitHub :
 **Settings → Pages → Build and deployment → Source : GitHub Actions**.
-Le jeu est alors disponible sur https://marroqui932.github.io/monopoly-iso/
+Le jeu est alors disponible sur https://marroqui932.github.io/#/monopoly
 
 ## Jouer en ligne
 

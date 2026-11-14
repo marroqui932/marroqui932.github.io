@@ -1,0 +1,84 @@
+/* Hub 3ajib Games — même nuit, mêmes enseignes que le Monopoly. */
+
+.hub {
+  height: 100%;
+  overflow: auto;
+  padding: 28px clamp(16px, 5vw, 64px) 60px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.hub-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 26px; }
+.hub-logo { margin: 0; font-family: var(--sign); font-weight: 400; line-height: 0.85; display: flex; flex-direction: column; }
+.hub-logo span:first-child {
+  font-size: clamp(3rem, 9vw, 5.6rem);
+  color: #fff6e5;
+  text-shadow: 0 6px 0 #8e0f22, 0 0 44px rgba(255, 79, 139, 0.45);
+}
+.hub-logo .games {
+  font-size: clamp(1.3rem, 3.6vw, 2.2rem);
+  color: var(--sodium);
+  letter-spacing: 0.32em;
+  margin-top: 10px;
+  text-shadow: 0 0 22px rgba(255, 179, 71, 0.7);
+}
+.me-chip {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 16px 6px 6px; cursor: pointer; font-weight: 600; color: var(--text);
+}
+.me-chip .edit { color: var(--muted); }
+.hub-profile { padding: 18px 22px; margin-bottom: 20px; }
+.hub-profile h2, .hub-join h2 { margin: 0 0 4px; font-size: 1.1rem; }
+.hub-join { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; padding: 18px 22px; }
+.join-row { display: flex; gap: 8px; }
+.join-error { color: #ff9da1; width: 100%; margin: 0; }
+.hub-title { font-family: var(--sign); font-weight: 400; font-size: 1.4rem; margin: 34px 0 14px; }
+.hub-games { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+.game-card {
+  text-align: left;
+  background: var(--glass-strong);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.game-card:not(.soon):hover { transform: translateY(-6px); border-color: rgba(255, 179, 71, 0.7); box-shadow: 0 0 34px rgba(255, 179, 71, 0.3), var(--shadow); }
+.game-card .cover { height: 190px; overflow: hidden; position: relative; background: #1b1d45; }
+.game-card .cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s; }
+.game-card:hover .cover img { transform: scale(1.06); }
+.game-card .info { padding: 16px 18px 18px; }
+.game-card .name { font-family: var(--sign); font-size: 1.5rem; }
+.game-card .tagline { color: var(--muted); margin: 6px 0 14px; line-height: 1.4; }
+.game-card .meta { display: flex; align-items: center; justify-content: space-between; }
+.game-card .play {
+  font-family: var(--sign); color: #2a1400; background: linear-gradient(180deg, #ffc56b, var(--sodium) 45%, var(--sodium-deep));
+  padding: 8px 18px; border-radius: 11px; box-shadow: 0 3px 0 #a2520a;
+}
+.game-card.soon { cursor: default; opacity: 0.6; }
+.soon-cover { display: grid; place-items: center; font-family: var(--sign); font-size: 5rem; color: rgba(255, 255, 255, 0.15); }
+.uno-cover {
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(ellipse at 50% 60%, #2c6b4f, #163a2b 70%);
+}
+.uno-cover .uno-card { --w: 84px; margin-left: -30px; transform-origin: 50% 130%; transition: transform 0.3s; }
+.uno-cover .uno-card:first-child { margin-left: 0; }
+.uno-cover .uno-card:nth-child(1) { transform: rotate(-20deg); }
+.uno-cover .uno-card:nth-child(2) { transform: rotate(-10deg); }
+.uno-cover .uno-card:nth-child(3) { transform: translateY(-8px); }
+.uno-cover .uno-card:nth-child(4) { transform: rotate(10deg); }
+.uno-cover .uno-card:nth-child(5) { transform: rotate(20deg); }
+.game-card:hover .uno-cover .uno-card:nth-child(1) { transform: rotate(-28deg); }
+.game-card:hover .uno-cover .uno-card:nth-child(5) { transform: rotate(28deg); }
+
+/* Écran de chargement d'un jeu */
+.loading-screen { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+.loading-logo { font-family: var(--sign); font-size: 2.4rem; color: #fff6e5; text-shadow: 0 4px 0 #8e0f22; }
+.loading-bar { width: 200px; height: 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.1); overflow: hidden; position: relative; }
+.loading-bar::after { content: ""; position: absolute; inset: 0; width: 40%; background: var(--sodium); border-radius: 6px; animation: loading 1s ease-in-out infinite alternate; }
+@keyframes loading { to { transform: translateX(150%); } }

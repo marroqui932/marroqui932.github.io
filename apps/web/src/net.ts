@@ -7,7 +7,8 @@
 import Peer, { type DataConnection, type PeerOptions } from "peerjs";
 import type { Action, GameEvent, GameOptions, GameState, PlayerId, TradeSide } from "@monopoly/engine";
 
-const PREFIX = "monopoly-iso-v1-";
+/** Préfixe commun à toutes les salles 3ajib Games (le code seul suffit pour rejoindre n'importe quel jeu). */
+const PREFIX = "3ajib-v1-";
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function newRoomCode(): string {
@@ -20,10 +21,10 @@ export function normalizeCode(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
 }
 
-export function inviteLink(code: string): string {
+export function inviteLink(code: string, game?: string): string {
   const url = new URL(window.location.href);
   url.search = "";
-  url.hash = "";
+  url.hash = game ? `#/${game}` : url.hash;
   url.searchParams.set("salle", code);
   const peer = new URLSearchParams(window.location.search).get("peer");
   if (peer) url.searchParams.set("peer", peer);
@@ -57,7 +58,7 @@ export interface LobbyPlayer extends Profile {
 export interface Lobby {
   code: string;
   players: LobbyPlayer[];
-  options: Partial<GameOptions>;
+  options: Partial<GameOptions> & { targetScore?: number | null };
   /** Plateau choisi par l'hôte. */
   themeId?: string;
 }
@@ -77,13 +78,15 @@ export type ClientMsg =
   | { t: "ping" }
   | { t: "draft"; draft: TradeDraft | null }
   | { t: "hello"; clientId: string; profile: Profile }
-  | { t: "action"; action: Action };
+  | { t: "action"; action: Action }
+  | { t: "which" };
 
 export type HostMsg =
   | { t: "ping" }
   | { t: "draft"; from: PlayerId; draft: TradeDraft | null }
   | { t: "lobby"; lobby: Lobby }
   | { t: "state"; state: GameState; events: GameEvent[] }
+  | { t: "game"; game: string }
   | { t: "error"; text: string }
   | { t: "rejected"; reason: string };
 
@@ -114,6 +117,8 @@ export class HostNet {
   constructor(
     readonly code: string,
     private h: HostHandlers,
+    /** Jeu hébergé dans cette salle (pour orienter ceux qui rejoignent par le code). */
+    readonly game = "monopoly",
   ) {}
 
   start() {
@@ -173,6 +178,10 @@ export class HostNet {
       const msg = raw as ClientMsg;
       this.lastSeen.set(conn, Date.now());
       if (msg.t === "ping") return;
+      if (msg.t === "which") {
+        conn.send({ t: "game", game: this.game } satisfies HostMsg);
+        return;
+      }
       if (msg.t === "hello") {
         clientId = String(msg.clientId).slice(0, 64);
         const old = this.conns.get(clientId);
@@ -357,3 +366,33 @@ export class ClientNet {
     this.peer?.destroy();
   }
 }
+
+/** Demande à une salle quel jeu elle héberge (null si introuvable). */
+export function probeRoom(code: string, timeoutMs = 9000): Promise<string | null> {
+  return new Promise((resolve) => {
+    const peer = new Peer(peerOptions());
+    let done = false;
+    const finish = (game: string | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      setTimeout(() => peer.destroy(), 200);
+      resolve(game);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    peer.on("error", () => finish(null));
+    peer.on("open", () => {
+      const conn = peer.connect(PREFIX + code, { reliable: true });
+      conn.on("open", () => conn.send({ t: "which" } satisfies ClientMsg));
+      conn.on("data", (raw) => {
+        const msg = raw as HostMsg;
+        if (msg.t === "game") finish(msg.game);
+      });
+    });
+  });
+}
+
+// ── Messages génériques (autres jeux que le Monopoly) ───────
+
+/** Hôte générique : mêmes mécanismes, mais messages libres. */
+export type AnyHostMsg = { t: string; [k: string]: unknown };

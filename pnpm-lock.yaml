@@ -14,6 +14,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@3ajib/uno':
+        specifier: workspace:*
+        version: link:../../packages/uno
       '@fontsource/bungee':
         specifier: ^5.3.0
         version: 5.3.0
@@ -71,6 +74,15 @@ importers:
         version: 8.3.8(esbuild@0.28.2)
 
   packages/engine:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(lightningcss@1.33.0)
+
+  packages/uno:
     devDependencies:
       typescript:
         specifier: ^5.6.0
