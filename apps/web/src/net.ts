@@ -58,7 +58,7 @@ export interface LobbyPlayer extends Profile {
 export interface Lobby {
   code: string;
   players: LobbyPlayer[];
-  options: Partial<GameOptions> & { targetScore?: number | null };
+  options: Partial<GameOptions> & { targetScore?: number | null; loup?: Record<string, unknown> };
   /** Plateau choisi par l'hôte. */
   themeId?: string;
 }

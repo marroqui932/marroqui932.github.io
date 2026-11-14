@@ -37,6 +37,22 @@ const GAMES: GameInfo[] = [
       </div>
     ),
   },
+  {
+    id: "loup",
+    name: "Loups-Garous",
+    tagline: "Le village et ses 12 rôles : voyante, sorcière, cupidon… L'ordinateur fait le narrateur.",
+    players: "4 à 18 joueurs",
+    cover: (
+      <div className="loup-cover" aria-hidden>
+        <span className="lc-moon" />
+        <span className="lc-wolf">🐺</span>
+        <svg viewBox="0 0 300 80" preserveAspectRatio="none" className="lc-town">
+          <path d="M0 80V52l18-14 18 14v-8h22V30l12-10 12 10v14h20l16-14 16 14v-6h18l10-24 10 24v6h22l14-12 14 12v-4h24l16-14 16 14v38z" />
+        </svg>
+        <span className="lc-eyes" />
+      </div>
+    ),
+  },
 ];
 
 export function Hub() {

@@ -82,3 +82,11 @@
 .loading-bar { width: 200px; height: 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.1); overflow: hidden; position: relative; }
 .loading-bar::after { content: ""; position: absolute; inset: 0; width: 40%; background: var(--sodium); border-radius: 6px; animation: loading 1s ease-in-out infinite alternate; }
 @keyframes loading { to { transform: translateX(150%); } }
+
+/* Couverture Loups-Garous */
+.loup-cover { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(ellipse at 70% 20%, #2b3a7a, #0b1026 70%); }
+.lc-moon { position: absolute; right: 16%; top: 12%; width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle at 38% 36%, #fffbe9, #e9e3c6 60%, #cfc6a0); box-shadow: 0 0 60px 18px rgba(233, 227, 198, 0.35); transition: box-shadow 0.5s, background 0.5s; }
+.lc-wolf { position: absolute; right: calc(16% + 18px); top: calc(12% + 22px); font-size: 74px; line-height: 1; filter: brightness(0); transform: scaleX(-1); transition: transform 0.5s; }
+.lc-town { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 42%; fill: #05071a; }
+.game-card:hover .lc-moon { background: radial-gradient(circle at 38% 36%, #ffd9d9, #e04050 60%, #8f0a1c); box-shadow: 0 0 70px 22px rgba(224, 64, 80, 0.45); }
+.game-card:hover .lc-wolf { transform: scaleX(-1) translateY(-6px) rotate(-6deg); }

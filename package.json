@@ -2,7 +2,7 @@
   "name": "3ajib-games",
   "private": true,
   "version": "0.1.0",
-  "description": "3ajib Games : nos jeux entre potes dans le navigateur (Monopoly 3ajib Edition, Uno…).",
+  "description": "3ajib Games : nos jeux entre potes dans le navigateur (Monopoly 3ajib Edition, Uno, Loups-Garous…).",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "scripts": {

@@ -6,6 +6,7 @@ Nos jeux entre potes, jouables dans le navigateur : **https://marroqui932.github
 |---|---|---|
 | Monopoly 3ajib Edition (3D isométrique) | `/#/monopoly` | 2 à 6 |
 | Uno (règles officielles) | `/#/uno` | 2 à 10 |
+| Loups-Garous (12 rôles, narrateur automatique) | `/#/loup` | 4 à 18 |
 
 Le hub garde un **profil commun** (pseudo, couleur, pion) et permet de **rejoindre n'importe quelle
 salle avec son code** : le site demande à la salle quel jeu elle héberge et y emmène directement.
@@ -16,11 +17,13 @@ salle avec son code** : le site demande à la salle quel jeu elle héberge et y 
 apps/web               Le site : hub + tous les jeux (un seul déploiement GitHub Pages)
   src/hub/             Page d'accueil 3ajib Games
   src/games/uno/       Interface et salle en ligne du Uno
+  src/games/loup/      Interface, décor, ambiance sonore et narrateur des Loups-Garous
   src/ (reste)         Interface du Monopoly (scène 3D, salle, fiches…)
   src/net.ts           Salles en ligne pair-à-pair, communes à tous les jeux
   src/profile.ts       Profil commun
 packages/engine        Moteur de règles du Monopoly (pur TypeScript, testé)
 packages/uno           Moteur de règles du Uno (pur TypeScript, testé)
+packages/loup          Moteur de règles des Loups-Garous (pur TypeScript, testé)
 ```
 
 Chaque jeu = un moteur de règles pur dans `packages/` (état + actions, sans affichage ni réseau)
@@ -40,6 +43,25 @@ boutons et les sons sont partagés.
 - Fin de manche : le gagnant marque les cartes des autres (chiffres = valeur, actions = 20,
   jokers = 50) ; partie en 500 points (ou 250, ou une seule manche)
 - Chaque joueur ne reçoit que **sa** main : l'hôte n'envoie aux autres que le nombre de cartes
+
+### Loups-Garous : comment ça marche
+
+- **Pas de meneur** : le navigateur de l'hôte fait le narrateur (minuteurs, appels de nuit, annonces).
+  Chaque joueur voit sur son écran s'il dort ou s'il est réveillé ; la voix du narrateur (synthèse
+  vocale du navigateur), l'ambiance de nuit et de jour et les effets sonores sont générés sur place.
+- **12 rôles** : Loup-Garou, Villageois, Voyante, Sorcière, Chasseur, Cupidon, Petite Fille,
+  Salvateur, Ancien, Idiot du village, Corbeau, Bouc émissaire. Composition automatique selon le
+  nombre de joueurs, ou réglée à la main par l'hôte.
+- **Nuit** : Cupidon et les amoureux (1re nuit), Salvateur, Voyante, Loups (unanimité, sinon
+  majorité à la fin du temps ; la Petite Fille peut espionner), Sorcière, Corbeau. Les rôles morts
+  ou absents ont quand même leur temps d'appel, pour ne rien trahir.
+- **Jour** : annonce des morts, élection du maire le premier jour (voix double, successeur désigné
+  à sa mort), débat chronométré et vote visible par des flèches ; égalité = bouc émissaire, sinon
+  personne. Chasseur, Idiot, Ancien et amoureux appliquent leurs règles.
+- **Fin** : le village gagne quand les loups sont morts, les loups quand il ne reste qu'eux, un
+  couple loup + villageois quand ils restent seuls.
+- **Secret** : chacun ne reçoit que ce qu'il a le droit de savoir ; la meute a son chat de nuit,
+  les morts voient tout et parlent entre eux.
 
 # Monopoly 3ajib Edition
 
