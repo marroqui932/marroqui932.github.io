@@ -30,6 +30,11 @@ let muted = (() => {
   }
 })();
 
+/** Contexte audio partagé (aussi utilisé par la musique d'ambiance). */
+export function getAudio(): AudioContext | null {
+  return audio();
+}
+
 function audio(): AudioContext | null {
   if (ctx) return ctx;
   try {

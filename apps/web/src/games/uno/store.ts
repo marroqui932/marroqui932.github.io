@@ -60,6 +60,8 @@ interface UnoStore {
   kick(id: PlayerId): void;
   start(): void;
   act(action: UnoAction): boolean;
+  /** Hôte uniquement : agir pour un autre joueur (ex. le déclarer prêt s'il est absent). */
+  actAs(playerId: PlayerId, action: UnoAction): boolean;
   quit(): void;
 }
 
@@ -222,7 +224,7 @@ export const useUno = create<UnoStore>((set, get) => {
       const lobby: Lobby = {
         code,
         players: [{ id: clientId, ...profile, name: profile.name || "Hôte", online: true, host: true }],
-        options: { targetScore: 500 },
+        options: { targetScore: null },
       };
       set({ mode: "host", me: clientId, lobby, view: null, rejected: null, notes: [] });
       save(code, lobby);
@@ -282,7 +284,7 @@ export const useUno = create<UnoStore>((set, get) => {
       try {
         full = createUno(
           lobby.players.map(({ id, name, color, token }) => ({ id, name, color, token })),
-          { targetScore: (lobby.options as { targetScore?: number | null }).targetScore ?? 500 },
+          { targetScore: (lobby.options as { targetScore?: number | null }).targetScore ?? null },
         );
       } catch (e) {
         if (e instanceof UnoError) return note(`⚠️ ${e.message}`, "error");
@@ -306,6 +308,13 @@ export const useUno = create<UnoStore>((set, get) => {
         play("error");
         note(`⚠️ ${err}`, "error");
       }
+      return !err;
+    },
+
+    actAs(playerId, action) {
+      if (get().mode !== "host") return false;
+      const err = hostApply(playerId, action);
+      if (err) note(`⚠️ ${err}`, "error");
       return !err;
     },
 

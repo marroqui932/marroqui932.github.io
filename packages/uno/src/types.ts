@@ -86,6 +86,8 @@ export interface UnoState {
   round: number;
   roundResult: RoundResult | null;
   winner: PlayerId | null;
+  /** Joueurs prêts à relancer (fin de manche ou de partie). */
+  ready: PlayerId[];
   rng: number;
   log: { n: number; text: string }[];
   logCounter: number;
@@ -100,7 +102,8 @@ export type UnoAction =
   | { type: "catchUno"; target: PlayerId }
   | { type: "acceptDraw4" }
   | { type: "challenge" }
-  | { type: "nextRound" }
+  /** Fin de manche ou de partie : je suis prêt à relancer. Quand tout le monde l'est, ça repart. */
+  | { type: "ready" }
   | { type: "leave" };
 
 export type UnoEvent =
@@ -118,7 +121,8 @@ export type UnoEvent =
   | { type: "reshuffled" }
   | { type: "roundOver"; winner: PlayerId; points: number }
   | { type: "gameOver"; winner: PlayerId | null }
-  | { type: "left"; player: PlayerId };
+  | { type: "left"; player: PlayerId }
+  | { type: "ready"; player: PlayerId };
 
 export interface NewPlayer {
   id: PlayerId;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { canPlay, cardLabel, colorName, COLORS, topCard, type UnoCard, type UnoColor, type UnoEvent, type UnoState } from "@3ajib/uno";
 import { inviteLink, normalizeCode, type Profile } from "../../net";
 import { loadProfile, saveProfile } from "../../profile";
@@ -6,6 +6,7 @@ import { ProfileEditor } from "../../ui/Options";
 import { TokenIcon } from "../../ui/TokenIcon";
 import { TOKENS } from "../../tokens";
 import { isMuted, play, setMuted } from "../../sound";
+import { isMusicOn, setMusicOn, useMusicScreen } from "../../music";
 import { CardBack, CardFace, CARD_COLORS } from "./Card";
 import { loadUnoHostSave, pushUnoNote, useUno } from "./store";
 import "./uno.css";
@@ -121,7 +122,7 @@ function UnoLobby() {
     );
   }
   const isHost = mode === "host";
-  const target = (lobby?.options as { targetScore?: number | null } | undefined)?.targetScore ?? 500;
+  const target = (lobby?.options as { targetScore?: number | null } | undefined)?.targetScore ?? null;
   return (
     <div className="setup uno-bg">
       <div className="setup-card panel">
@@ -169,16 +170,16 @@ function UnoLobby() {
             <h2>Fin de partie</h2>
             <fieldset disabled={!isHost} className="options" style={{ border: 0, padding: 0, margin: 0 }}>
               <label>
-                <input type="radio" checked={target === 500} onChange={() => setOptions({ targetScore: 500 })} />
-                Officiel : le premier à 500 points
+                <input type="radio" checked={target === null} onChange={() => setOptions({ targetScore: null })} />
+                Rapide : le premier qui n'a plus de cartes gagne, puis on relance
               </label>
               <label>
                 <input type="radio" checked={target === 250} onChange={() => setOptions({ targetScore: 250 })} />
-                Partie courte : 250 points
+                En points : le premier à 250
               </label>
               <label>
-                <input type="radio" checked={target === null} onChange={() => setOptions({ targetScore: null })} />
-                Une seule manche
+                <input type="radio" checked={target === 500} onChange={() => setOptions({ targetScore: 500 })} />
+                Officiel : le premier à 500 points
               </label>
             </fieldset>
             <div className="setup-actions">
@@ -209,82 +210,30 @@ function UnoLobby() {
 
 // ── La table ────────────────────────────────────────────────
 
-function useEventFeedback(view: UnoState) {
-  const events = useUno((s) => s.events);
-  const me = useUno((s) => s.me);
-  const last = useRef(0);
-  useEffect(() => {
-    if (events.seq === last.current) return;
-    last.current = events.seq;
-    const name = (id: string) => (id === me ? "Tu" : (view.players.find((p) => p.id === id)?.name ?? "?"));
-    for (const e of events.list) feedback(e, name, me);
-  }, [events, me, view.players]);
-}
+/** Rectangle de la carte que je viens de cliquer (pour la faire voler jusqu'à la défausse). */
+let lastPlayedRect: DOMRect | null = null;
 
-function feedback(e: UnoEvent, name: (id: string) => string, me: string | null) {
-  switch (e.type) {
-    case "cardPlayed":
-      play("card");
-      if (e.player !== me) pushUnoNote(`${name(e.player)} pose ${cardLabel(e.card)}`);
-      break;
-    case "drew":
-      play("step");
-      if (e.reason !== "pioche") pushUnoNote(`${name(e.player)} pioche ${e.count} carte${e.count > 1 ? "s" : ""} (${e.reason})`, e.player === me ? "bad" : "info");
-      break;
-    case "colorChosen":
-      pushUnoNote(`Couleur demandée : ${colorName(e.color)}`);
-      break;
-    case "reversed":
-      pushUnoNote("⇄ Le sens s'inverse !");
-      break;
-    case "skipped":
-      pushUnoNote(e.player === me ? "⊘ Tu passes ton tour" : `⊘ ${name(e.player)} passe son tour`, e.player === me ? "bad" : "info");
-      break;
-    case "unoSaid":
-      play("yourTurn");
-      pushUnoNote(`📣 ${name(e.player)} : « UNO ! »`, "good");
-      break;
-    case "unoCaught":
-      play("error");
-      pushUnoNote(`🚨 ${name(e.by)} attrape ${name(e.target)} : +2 cartes !`, "bad");
-      break;
-    case "challenged":
-      pushUnoNote(e.success ? `🕵️ Bluff démasqué ! ${name(e.target)} pioche 4 cartes` : `🕵️ Contestation ratée : ${name(e.by)} pioche 6 cartes`, "bad");
-      break;
-    case "turnStarted":
-      if (e.player === me) play("yourTurn");
-      break;
-    case "roundOver":
-      play("buy");
-      break;
-    case "reshuffled":
-      pushUnoNote("La défausse est remélangée");
-      break;
-    default:
-      break;
+const seatRect = (id: string) => document.querySelector(`[data-seat="${id}"]`)?.getBoundingClientRect() ?? null;
+const pileRect = () => document.querySelector("[data-pile]")?.getBoundingClientRect() ?? null;
+const discardRect = () => document.querySelector("[data-discard]")?.getBoundingClientRect() ?? null;
+const handRect = () => document.querySelector("[data-hand]")?.getBoundingClientRect() ?? null;
+
+type Flight =
+  | { id: number; kind: "card"; card: UnoCard; from: DOMRect; to: DOMRect; delay: number }
+  | { id: number; kind: "back"; from: DOMRect; to: DOMRect; delay: number }
+  | { id: number; kind: "stamp"; text: string; tone: "bad" | "good" | "info"; at: DOMRect; delay: number };
+
+let flightId = 0;
+
+/** Ordre des joueurs en partant de celui qui joue, dans le sens du jeu. */
+function turnOrder(view: UnoState) {
+  const n = view.players.length;
+  const out: UnoState["players"] = [];
+  for (let k = 0; k < n; k++) {
+    const p = view.players[(((view.current + k * view.direction) % n) + n) % n]!;
+    if (!p.left) out.push(p);
   }
-}
-
-function Notes() {
-  const notes = useUno((s) => s.notes);
-  const [, tick] = useState(0);
-  const now = performance.now() / 1000;
-  const visible = notes.filter((n) => now - n.at < 1.6).slice(-3);
-  useEffect(() => {
-    if (!visible.length) return;
-    const id = setTimeout(() => tick((x) => x + 1), 200);
-    return () => clearTimeout(id);
-  });
-  return (
-    <div className="notes uno-notes">
-      {visible.map((n) => (
-        <div key={n.id} className={`note ${n.kind}`} style={{ animationDuration: "1.6s" }}>
-          <span>{n.text}</span>
-          <span className="timer" style={{ animationDuration: "1.6s" }} />
-        </div>
-      ))}
-    </div>
-  );
+  return out;
 }
 
 function UnoTable({ view }: { view: UnoState }) {
@@ -294,39 +243,52 @@ function UnoTable({ view }: { view: UnoState }) {
   const act = useUno((s) => s.act);
   const quit = useUno((s) => s.quit);
   const [muted, setMutedState] = useState(isMuted());
+  const [music, setMusic] = useState(isMusicOn());
   const [pendingWild, setPendingWild] = useState<UnoCard | null>(null);
   useEventFeedback(view);
+  useEffect(() => useMusicScreen(), []);
 
-  const myIndex = view.players.findIndex((p) => p.id === me);
-  const mine = view.players[myIndex];
+  const myIndex = Math.max(0, view.players.findIndex((p) => p.id === me));
+  const mine = view.players.find((p) => p.id === me);
   const current = view.players[view.current]!;
+  const playing = view.phase === "play" || view.phase === "challenge" || view.phase === "startColor";
   const myTurn = current.id === me && view.phase === "play";
   const top = topCard(view);
-  // Les adversaires, dans l'ordre du jeu à partir de moi.
-  const opponents = view.players.map((_, i) => view.players[(myIndex + 1 + i) % view.players.length]!).filter((p) => p.id !== me);
-  const offline = (id: string) => lobby?.players.some((p) => p.id === id && !p.online);
+  // Autour de la table : moi en bas, puis les autres dans l'ordre du jeu (sens horaire).
+  const others = view.players.map((_, i) => view.players[(myIndex + 1 + i) % view.players.length]!).filter((p) => p.id !== me);
+  const offline = (id: string) => !!lobby?.players.some((p) => p.id === id && !p.online);
 
-  const playCard = (card: UnoCard) => {
+  const playCard = (card: UnoCard, el: HTMLElement | null) => {
+    lastPlayedRect = el?.getBoundingClientRect() ?? null;
     if (card.kind === "wild" || card.kind === "wild4") setPendingWild(card);
     else act({ type: "play", cardId: card.id });
   };
-
-  const canSayUno = mine && !mine.saidUno && ((mine.hand.length === 2 && myTurn) || (mine.hand.length === 1 && view.unoTarget === me));
+  const canSayUno = !!mine && !mine.saidUno && ((mine.hand.length === 2 && myTurn) || (mine.hand.length === 1 && view.unoTarget === me));
 
   return (
-    <div className="uno-table">
+    <div className={`uno-table ${myTurn ? "my-turn" : ""}`}>
       <div className="uno-top panel">
         <a className="btn small ghost" href="#/" onClick={() => quit()}>
           ← Hub
         </a>
         <span className="round">
           Manche <b>{view.round}</b>
-          {view.options.targetScore ? ` · objectif ${view.options.targetScore} pts` : " · une seule manche"}
+          {view.options.targetScore ? ` · objectif ${view.options.targetScore} pts` : " · partie rapide"}
         </span>
         {lobby && <span className="round">Salle {lobby.code}</span>}
         <button
           className="btn small ghost"
-          title={muted ? "Activer le son" : "Couper le son"}
+          title={music ? "Couper la musique" : "Mettre la musique"}
+          onClick={() => {
+            setMusicOn(!music);
+            setMusic(!music);
+          }}
+        >
+          {music ? "🎵" : "🎵̸"}
+        </button>
+        <button
+          className="btn small ghost"
+          title={muted ? "Activer les sons" : "Couper les sons"}
           onClick={() => {
             setMuted(!muted);
             setMutedState(!muted);
@@ -345,79 +307,65 @@ function UnoTable({ view }: { view: UnoState }) {
         </button>
       </div>
 
-      {/* Adversaires */}
-      <div className="uno-opponents">
-        {opponents.map((p) => {
-          const isCur = p.id === current.id && view.phase !== "roundOver" && view.phase !== "gameOver";
-          return (
-            <div key={p.id} className={`opp ${isCur ? "current" : ""} ${p.left ? "left" : ""}`}>
-              <div className="opp-head">
-                <span className="avatar" style={{ background: p.color }}>
-                  <TokenIcon token={p.token} />
-                </span>
-                <div>
-                  <div className="opp-name">{p.name}</div>
-                  <div className="opp-score">
-                    {p.score} pts{offline(p.id) ? " · hors ligne" : ""}
-                    {p.left ? " · parti" : ""}
-                  </div>
-                </div>
-              </div>
-              <div className="opp-fan">
-                {Array.from({ length: Math.min(p.handCount, 12) }, (_, i) => (
-                  <CardBack key={i} size="sm" style={{ transform: `rotate(${(i - Math.min(p.handCount, 12) / 2) * 5}deg)`, marginLeft: i ? -26 : 0 }} />
-                ))}
-                <span className="count">{p.handCount}</span>
-              </div>
-              {p.handCount === 1 && p.saidUno && <span className="uno-badge">UNO !</span>}
-              {view.unoTarget === p.id && (
-                <button className="btn small catch" onClick={() => act({ type: "catchUno", target: p.id })}>
-                  🚨 Contre-UNO !
-                </button>
-              )}
+      <TurnList view={view} me={me} offline={offline} />
+
+      <div className="felt-wrap">
+        <div className="felt">
+          <span className="felt-logo" aria-hidden>
+            3AJIB
+          </span>
+          {others.map((p, i) => {
+            // Les adversaires s'étalent de la gauche (après moi) jusqu'à la droite, en passant par le haut.
+            const a = Math.PI * (1 - (i + 1) / (others.length + 1));
+            return (
+              <Seat
+                key={p.id}
+                view={view}
+                player={p}
+                x={50 - Math.cos(a) * 54}
+                y={50 - Math.sin(a) * 64}
+                active={playing && p.id === current.id}
+                offline={offline(p.id)}
+              />
+            );
+          })}
+          {mine && <Seat view={view} player={mine} x={50} y={108} active={playing && mine.id === current.id} offline={false} isMe />}
+
+          <div className="table-center">
+            <DirectionBadge direction={view.direction} />
+            <button
+              className={`draw-pile ${myTurn && !view.drawn ? "can" : ""}`}
+              disabled={!myTurn || !!view.drawn}
+              onClick={() => act({ type: "draw" })}
+              title="Piocher une carte"
+              data-pile
+            >
+              <CardBack size="lg" className="stack3" />
+              <CardBack size="lg" className="stack2" />
+              <CardBack size="lg" />
+              <span className="pile-count">{view.drawCount} cartes</span>
+            </button>
+            <div className="discard" data-discard>
+              {view.discard.slice(-3, -1).map((c, i) => (
+                <CardFace key={c.id} card={c} size="lg" className={`under u${i}`} />
+              ))}
+              <CardFace key={top.id} card={top} size="lg" className="landing" />
             </div>
-          );
-        })}
-      </div>
-
-      {/* Centre : pioche, défausse, couleur et sens */}
-      <div className="uno-center">
-        <div className={`direction ${view.direction === 1 ? "cw" : "ccw"}`} style={{ ["--c" as string]: CARD_COLORS[view.currentColor] }} aria-hidden />
-        <button
-          className={`draw-pile ${myTurn && !view.drawn ? "can" : ""}`}
-          disabled={!myTurn || !!view.drawn}
-          onClick={() => act({ type: "draw" })}
-          title="Piocher une carte"
-        >
-          <CardBack size="lg" className="stack3" />
-          <CardBack size="lg" className="stack2" />
-          <CardBack size="lg" />
-          <span className="pile-count">{view.drawCount}</span>
-        </button>
-        <div className="discard">
-          {view.discard.slice(-3, -1).map((c, i) => (
-            <CardFace key={c.id} card={c} size="lg" className={`under u${i}`} />
-          ))}
-          <CardFace key={top.id} card={top} size="lg" className="landing" />
-        </div>
-        <div className="color-chip" style={{ background: CARD_COLORS[view.currentColor] }}>
-          {colorName(view.currentColor)}
+            <div className="color-chip" style={{ ["--cc" as string]: CARD_COLORS[view.currentColor] }}>
+              <span className="swatch-dot" />
+              {colorName(view.currentColor)}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Moi */}
       {mine && (
         <div className={`uno-me ${myTurn ? "my-turn" : ""}`}>
           <div className="me-bar">
-            <span className="avatar" style={{ background: mine.color }}>
-              <TokenIcon token={mine.token} />
-            </span>
-            <b>{mine.name}</b>
-            <span className="opp-score">{mine.score} pts</span>
             <span className="turn-msg">
               {view.phase === "play" && (myTurn ? (view.drawn ? "Tu as pioché une carte jouable : pose-la ou garde-la." : "À toi ! Pose une carte ou pioche.") : `${current.name} joue…`)}
-              {view.phase === "challenge" && (view.pendingWild4?.victim === me ? "" : `${current.name} décide pour le +4…`)}
-              {view.phase === "startColor" && (current.id === me ? "" : `${current.name} choisit la couleur de départ…`)}
+              {view.phase === "challenge" && view.pendingWild4?.victim !== me && `${current.name} décide pour le +4…`}
+              {view.phase === "startColor" && current.id !== me && `${current.name} choisit la couleur de départ…`}
             </span>
             {canSayUno && (
               <button className="btn uno-call" onClick={() => act({ type: "sayUno" })}>
@@ -444,46 +392,262 @@ function UnoTable({ view }: { view: UnoState }) {
           onCancel={() => setPendingWild(null)}
         />
       )}
-      {view.phase === "startColor" && current.id === me && (
-        <ColorPicker title="Première carte : un joker ! Choisis la couleur" onPick={(color) => act({ type: "chooseColor", color })} />
-      )}
+      {view.phase === "startColor" && current.id === me && <ColorPicker title="Première carte : un joker ! Choisis la couleur" onPick={(color) => act({ type: "chooseColor", color })} />}
       {view.phase === "challenge" && view.pendingWild4?.victim === me && <ChallengeBox view={view} />}
-      {(view.phase === "roundOver" || view.phase === "gameOver") && view.roundResult && <RoundOver view={view} />}
+      {(view.phase === "roundOver" || view.phase === "gameOver") && view.roundResult && <RoundOver view={view} offline={offline} />}
+      <FlyLayer view={view} />
+      <TurnBanner />
       <Notes />
     </div>
   );
 }
 
-function Hand({ view, hand, myTurn, onPlay }: { view: UnoState; hand: UnoCard[]; myTurn: boolean; onPlay: (c: UnoCard) => void }) {
-  // Main triée : par couleur puis par valeur, jokers à la fin.
+/** Liste à gauche : l'ordre du tour à partir de celui qui joue, et le sens. */
+function TurnList({ view, me, offline }: { view: UnoState; me: string | null; offline: (id: string) => boolean }) {
+  const order = turnOrder(view);
+  const playing = view.phase === "play" || view.phase === "challenge" || view.phase === "startColor";
+  return (
+    <aside className="turn-list panel">
+      <div className="tl-head">
+        <span>Ordre du tour</span>
+        <span className={`tl-dir ${view.direction === 1 ? "cw" : "ccw"}`} title={view.direction === 1 ? "Sens horaire" : "Sens inverse"}>
+          {view.direction === 1 ? "↻ horaire" : "↺ inverse"}
+        </span>
+      </div>
+      {order.map((p, i) => (
+        <div key={p.id} className={`tl-row ${playing && i === 0 ? "now" : ""} ${playing && i === 1 ? "next" : ""}`}>
+          <span className="avatar small" style={{ background: p.color }}>
+            <TokenIcon token={p.token} size={15} />
+          </span>
+          <span className="tl-name">
+            {p.name}
+            {p.id === me && <small> (toi)</small>}
+            {offline(p.id) && <small className="off"> · hors ligne</small>}
+          </span>
+          <span className="tl-cards" title="Cartes en main">
+            🂠 {p.handCount}
+          </span>
+          {playing && i === 0 && <span className="tl-tag now">Joue</span>}
+          {playing && i === 1 && <span className="tl-tag">Suivant</span>}
+          {p.handCount === 1 && p.saidUno && <span className="tl-tag uno">UNO</span>}
+          {view.options.targetScore !== null && <span className="tl-score">{p.score} pts</span>}
+        </div>
+      ))}
+    </aside>
+  );
+}
+
+function DirectionBadge({ direction }: { direction: 1 | -1 }) {
+  return (
+    <div key={direction} className={`dir-badge ${direction === 1 ? "cw" : "ccw"}`} title={direction === 1 ? "Sens horaire" : "Sens inverse"} aria-hidden>
+      <svg viewBox="0 0 48 48" width="44" height="44">
+        <path d="M24 6a18 18 0 1 1-15.6 9" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" />
+        <path d="M2.5 13.5 8.6 15.4 10.7 9" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+function Seat({
+  view,
+  player,
+  x,
+  y,
+  active,
+  offline,
+  isMe,
+}: {
+  view: UnoState;
+  player: UnoState["players"][number];
+  x: number;
+  y: number;
+  active: boolean;
+  offline: boolean;
+  isMe?: boolean;
+}) {
+  const act = useUno((s) => s.act);
+  const fan = Math.min(player.handCount, 9);
+  return (
+    <div className={`seat ${active ? "active" : ""} ${player.left ? "gone" : ""} ${isMe ? "me" : ""}`} style={{ left: `${x}%`, top: `${y}%` }} data-seat={player.id}>
+      {!isMe && fan > 0 && (
+        <div className="seat-fan">
+          {Array.from({ length: fan }, (_, i) => (
+            <CardBack key={i} size="sm" style={{ transform: `rotate(${(i - (fan - 1) / 2) * 8}deg)`, marginLeft: i ? -24 : 0 }} />
+          ))}
+        </div>
+      )}
+      <div className="seat-avatar" style={{ background: player.color }}>
+        <TokenIcon token={player.token} size={28} />
+        {!isMe && <span className="seat-count">{player.handCount}</span>}
+      </div>
+      <div className="seat-name">
+        {player.name}
+        {isMe && " (toi)"}
+        {offline && <small> · hors ligne</small>}
+      </div>
+      {active && <div className="seat-tag">{isMe ? "À toi !" : "Joue"}</div>}
+      {player.handCount === 1 && player.saidUno && <span className="uno-badge">UNO !</span>}
+      {view.unoTarget === player.id && !isMe && (
+        <button className="btn small catch" onClick={() => act({ type: "catchUno", target: player.id })}>
+          🚨 Contre-UNO !
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Hand({ view, hand, myTurn, onPlay }: { view: UnoState; hand: UnoCard[]; myTurn: boolean; onPlay: (c: UnoCard, el: HTMLElement | null) => void }) {
   const sorted = useMemo(() => {
     const order = (c: UnoCard) => (c.color ? COLORS.indexOf(c.color) : 9) * 100 + (c.kind === "number" ? c.value! : 20 + ["skip", "reverse", "draw2", "wild", "wild4"].indexOf(c.kind));
     return [...hand].sort((a, b) => order(a) - order(b));
   }, [hand]);
-  const known = useRef<Set<number>>(new Set());
-  const fresh = new Set(sorted.filter((c) => !known.current.has(c.id)).map((c) => c.id));
+  const known = useRef<Set<number> | null>(null);
+  const fresh = known.current ? new Set(sorted.filter((c) => !known.current!.has(c.id)).map((c) => c.id)) : new Set<number>();
   useEffect(() => {
     known.current = new Set(hand.map((c) => c.id));
   }, [hand]);
   const n = sorted.length;
   return (
-    <div className="hand" style={{ ["--n" as string]: n }}>
+    <div className="hand" style={{ ["--n" as string]: n }} data-hand>
       {sorted.map((c, i) => {
         const allowed = myTurn && canPlay(view, c) && (!view.drawn || view.drawn.cardId === c.id);
         const angle = n > 1 ? (i - (n - 1) / 2) * Math.min(5, 50 / n) : 0;
         return (
-          <div key={c.id} className="hand-slot" style={{ ["--a" as string]: `${angle}deg`, zIndex: i }}>
+          <div
+            key={c.id}
+            className="hand-slot"
+            style={{ ["--a" as string]: `${angle}deg`, zIndex: i, animationDelay: fresh.has(c.id) ? `${0.35 + [...fresh].indexOf(c.id) * 0.09}s` : undefined }}
+          >
             <CardFace
               card={c}
               size="lg"
               playable={allowed}
-              className={`${fresh.has(c.id) && known.current.size ? "fresh" : ""} ${view.drawn?.cardId === c.id ? "just-drawn" : ""}`}
-              onClick={allowed ? () => onPlay(c) : undefined}
+              className={`${fresh.has(c.id) ? "fresh" : ""} ${view.drawn?.cardId === c.id ? "just-drawn" : ""}`}
+              onClick={allowed ? () => onPlay(c, document.querySelector(`[data-card="${c.id}"]`)) : undefined}
               title={cardLabel(c)}
+              dataId={c.id}
             />
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Cartes qui volent (jouées, piochées) et tampons sur les sièges. */
+function FlyLayer({ view }: { view: UnoState }) {
+  const events = useUno((s) => s.events);
+  const me = useUno((s) => s.me);
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const last = useRef(events.seq);
+  useLayoutEffect(() => {
+    if (events.seq === last.current) return;
+    last.current = events.seq;
+    if (view.phase === "roundOver" || view.phase === "gameOver") return;
+    const out: Flight[] = [];
+    let delay = 0;
+    const stamp = (player: string, text: string, tone: "bad" | "good" | "info", d = delay) => {
+      const at = seatRect(player);
+      if (at) out.push({ id: ++flightId, kind: "stamp", text, tone, at, delay: d });
+    };
+    for (const e of events.list) {
+      if (e.type === "cardPlayed") {
+        const to = discardRect();
+        const from = e.player === me ? (lastPlayedRect ?? handRect()) : seatRect(e.player);
+        if (from && to) out.push({ id: ++flightId, kind: "card", card: e.card, from, to, delay });
+        lastPlayedRect = null;
+        delay += 0.12;
+      } else if (e.type === "drew") {
+        const from = pileRect();
+        const to = e.player === me ? handRect() : seatRect(e.player);
+        if (from && to) {
+          for (let k = 0; k < Math.min(e.count, 6); k++) out.push({ id: ++flightId, kind: "back", from, to, delay: delay + k * 0.09 });
+        }
+        if (e.reason !== "pioche") stamp(e.player, `+${e.count}`, "bad", delay + 0.2);
+        delay += 0.1;
+      } else if (e.type === "skipped") stamp(e.player, "⊘", "bad", delay + 0.25);
+      else if (e.type === "unoSaid") stamp(e.player, "UNO !", "good");
+    }
+    if (out.length) setFlights((f) => [...f, ...out]);
+  }, [events, me, view]);
+  const done = (id: number) => setFlights((f) => f.filter((x) => x.id !== id));
+  return (
+    <div className="fly-layer" aria-hidden>
+      {flights.map((f) => (
+        <FlightView key={f.id} f={f} onDone={() => done(f.id)} />
+      ))}
+    </div>
+  );
+}
+
+function FlightView({ f, onDone }: { f: Flight; onDone: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let anim: Animation;
+    if (f.kind === "stamp") {
+      anim = el.animate(
+        [
+          { transform: "translate(-50%, -50%) scale(2.2) rotate(-14deg)", opacity: 0 },
+          { transform: "translate(-50%, -50%) scale(1) rotate(-8deg)", opacity: 1, offset: 0.18 },
+          { transform: "translate(-50%, -50%) scale(1) rotate(-8deg)", opacity: 1, offset: 0.8 },
+          { transform: "translate(-50%, -70%) scale(0.9) rotate(-8deg)", opacity: 0 },
+        ],
+        { duration: 1300, delay: f.delay * 1000, fill: "both", easing: "cubic-bezier(.2,.9,.3,1.2)" },
+      );
+    } else {
+      const dx = f.from.left + f.from.width / 2 - (f.to.left + f.to.width / 2);
+      const dy = f.from.top + f.from.height / 2 - (f.to.top + f.to.height / 2);
+      const spin = f.kind === "card" ? -25 + Math.random() * 20 : 12;
+      anim = el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px) rotate(${spin}deg) scale(${f.kind === "back" ? 0.6 : 1})`, opacity: 1 },
+          { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 60}px) rotate(${spin / 2}deg) scale(1.08)`, opacity: 1, offset: 0.5 },
+          { transform: "translate(0, 0) rotate(-3deg) scale(1)", opacity: f.kind === "back" ? 0 : 1 },
+        ],
+        { duration: f.kind === "back" ? 420 : 380, delay: f.delay * 1000, fill: "both", easing: "cubic-bezier(.3,.7,.3,1)" },
+      );
+    }
+    anim.onfinish = onDone;
+    return () => anim.cancel();
+  }, [f, onDone]);
+
+  if (f.kind === "stamp") {
+    return (
+      <div ref={ref} className={`stamp ${f.tone}`} style={{ left: f.at.left + f.at.width / 2, top: f.at.top + f.at.height / 2 }}>
+        {f.text}
+      </div>
+    );
+  }
+  const style = { left: f.to.left + f.to.width / 2 - 46, top: f.to.top + f.to.height / 2 - 68 };
+  return (
+    <div ref={ref} className="flight" style={style}>
+      {f.kind === "card" ? <CardFace card={f.card} size="lg" /> : <CardBack size="lg" />}
+    </div>
+  );
+}
+
+/** Grande bannière quand c'est à moi. */
+function TurnBanner() {
+  const events = useUno((s) => s.events);
+  const me = useUno((s) => s.me);
+  const [show, setShow] = useState(0);
+  const last = useRef(events.seq);
+  useEffect(() => {
+    if (events.seq === last.current) return;
+    last.current = events.seq;
+    if (events.list.some((e) => e.type === "turnStarted" && e.player === me)) {
+      const id = Date.now();
+      setShow(id);
+      const t = setTimeout(() => setShow((s) => (s === id ? 0 : s)), 1100);
+      return () => clearTimeout(t);
+    }
+  }, [events, me]);
+  if (!show) return null;
+  return (
+    <div className="turn-banner" key={show}>
+      À toi de jouer !
     </div>
   );
 }
@@ -537,26 +701,34 @@ function ChallengeBox({ view }: { view: UnoState }) {
   );
 }
 
-function RoundOver({ view }: { view: UnoState }) {
+function RoundOver({ view, offline }: { view: UnoState; offline: (id: string) => boolean }) {
   const act = useUno((s) => s.act);
-  const quit = useUno((s) => s.quit);
+  const actAs = useUno((s) => s.actAs);
+  const me = useUno((s) => s.me);
+  const mode = useUno((s) => s.mode);
   const r = view.roundResult!;
   const winner = view.players.find((p) => p.id === r.winner)!;
   const over = view.phase === "gameOver";
-  const ranking = [...view.players].sort((a, b) => b.score - a.score);
+  const alive = view.players.filter((p) => !p.left);
+  const iAmReady = !!me && view.ready.includes(me);
+  const missing = alive.filter((p) => !view.ready.includes(p.id));
+  const ranking = [...alive].sort((a, b) => b.score - a.score);
   return (
     <div className="modal-bg">
       {over && <Confetti color={winner.color} />}
       <div className="panel modal round-over">
-        <h2>{over ? `🏆 ${winner.name} gagne la partie !` : `🏁 ${winner.name} remporte la manche`}</h2>
-        <p className="gain">+{r.points} points</p>
+        <div className="winner-avatar" style={{ background: winner.color }}>
+          <TokenIcon token={winner.token} size={44} />
+        </div>
+        <h2>{over ? `🏆 ${winner.name} gagne !` : `🏁 ${winner.name} remporte la manche`}</h2>
+        {view.options.targetScore !== null && <p className="gain">+{r.points} points</p>}
         <div className="leftovers">
           {r.hands.map((h) => {
             const p = view.players.find((pl) => pl.id === h.player)!;
             return (
               <div key={h.player} className="leftover">
                 <span className="nm">
-                  {p.name} <small>({h.points} pts)</small>
+                  {p.name} <small>({h.cards.length} carte{h.cards.length > 1 ? "s" : ""})</small>
                 </span>
                 <span className="mini-cards">
                   {h.cards.map((c) => (
@@ -567,24 +739,43 @@ function RoundOver({ view }: { view: UnoState }) {
             );
           })}
         </div>
-        <ol className="scores">
-          {ranking.map((p) => (
-            <li key={p.id}>
-              <span className="avatar small" style={{ background: p.color }}>
-                <TokenIcon token={p.token} size={14} />
-              </span>
-              {p.name} — <b>{p.score}</b> pts
-            </li>
-          ))}
-        </ol>
-        <div className="setup-actions">
-          {over ? (
-            <a className="btn primary big" href="#/" onClick={() => quit()}>
-              Retour au hub
-            </a>
-          ) : (
-            <button className="btn primary big" onClick={() => act({ type: "nextRound" })}>
-              Manche suivante
+        {view.options.targetScore !== null && (
+          <ol className="scores">
+            {ranking.map((p) => (
+              <li key={p.id}>
+                <span className="avatar small" style={{ background: p.color }}>
+                  <TokenIcon token={p.token} size={14} />
+                </span>
+                {p.name} — <b>{p.score}</b> pts
+              </li>
+            ))}
+          </ol>
+        )}
+        <h3 className="ready-title">{over ? "On relance ?" : "Manche suivante ?"}</h3>
+        <div className="ready-list">
+          {alive.map((p) => {
+            const ok = view.ready.includes(p.id);
+            return (
+              <div key={p.id} className={`ready-chip ${ok ? "ok" : ""}`}>
+                <span className="avatar small" style={{ background: p.color }}>
+                  <TokenIcon token={p.token} size={14} />
+                </span>
+                {p.name}
+                <span className="state">{ok ? "Prêt ✓" : offline(p.id) ? "hors ligne" : "…"}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="setup-actions" style={{ justifyContent: "center" }}>
+          <a className="btn" href="#/" onClick={() => useUno.getState().quit()}>
+            Retour au hub
+          </a>
+          <button className="btn primary big" disabled={iAmReady} onClick={() => act({ type: "ready" })}>
+            {iAmReady ? `En attente (${view.ready.length}/${alive.length})` : "Prêt !"}
+          </button>
+          {mode === "host" && iAmReady && missing.length > 0 && (
+            <button className="btn small ghost" onClick={() => missing.forEach((p) => actAs(p.id, { type: "ready" }))} title="Pour ne pas attendre quelqu'un d'absent">
+              Lancer sans attendre
             </button>
           )}
         </div>
@@ -609,6 +800,81 @@ function Confetti({ color }: { color: string }) {
     <div className="confetti" aria-hidden>
       {bits.map((c, i) => (
         <i key={i} style={{ left: `${c.left}%`, background: c.color, width: c.size, height: c.size * 0.45, animationDelay: `${c.delay}s`, animationDuration: `${c.duration}s` }} />
+      ))}
+    </div>
+  );
+}
+
+// ── Sons et notifications ───────────────────────────────────
+
+function useEventFeedback(view: UnoState) {
+  const events = useUno((s) => s.events);
+  const me = useUno((s) => s.me);
+  const last = useRef(0);
+  useEffect(() => {
+    if (events.seq === last.current) return;
+    last.current = events.seq;
+    const name = (id: string) => (id === me ? "Tu" : (view.players.find((p) => p.id === id)?.name ?? "?"));
+    for (const e of events.list) feedback(e, name, me);
+  }, [events, me, view.players]);
+}
+
+function feedback(e: UnoEvent, name: (id: string) => string, me: string | null) {
+  switch (e.type) {
+    case "cardPlayed":
+      play("card");
+      break;
+    case "drew":
+      play("step");
+      break;
+    case "colorChosen":
+      pushUnoNote(`🎨 Couleur demandée : ${colorName(e.color)}`);
+      break;
+    case "reversed":
+      play("trade");
+      pushUnoNote("⇄ Le sens s'inverse !");
+      break;
+    case "unoSaid":
+      play("yourTurn");
+      break;
+    case "unoCaught":
+      play("error");
+      pushUnoNote(`🚨 ${name(e.by)} attrape ${name(e.target)} : +2 cartes !`, "bad");
+      break;
+    case "challenged":
+      pushUnoNote(e.success ? `🕵️ Bluff démasqué ! ${name(e.target)} pioche 4 cartes` : `🕵️ Contestation ratée : ${name(e.by)} pioche 6 cartes`, "bad");
+      break;
+    case "turnStarted":
+      if (e.player === me) play("yourTurn");
+      break;
+    case "roundOver":
+      play("buy");
+      break;
+    case "reshuffled":
+      pushUnoNote("La défausse est remélangée");
+      break;
+    default:
+      break;
+  }
+}
+
+function Notes() {
+  const notes = useUno((s) => s.notes);
+  const [, tick] = useState(0);
+  const now = performance.now() / 1000;
+  const visible = notes.filter((n) => now - n.at < 1.6).slice(-3);
+  useEffect(() => {
+    if (!visible.length) return;
+    const id = setTimeout(() => tick((x) => x + 1), 200);
+    return () => clearTimeout(id);
+  });
+  return (
+    <div className="notes uno-notes">
+      {visible.map((n) => (
+        <div key={n.id} className={`note ${n.kind}`} style={{ animationDuration: "1.6s" }}>
+          <span>{n.text}</span>
+          <span className="timer" style={{ animationDuration: "1.6s" }} />
+        </div>
       ))}
     </div>
   );

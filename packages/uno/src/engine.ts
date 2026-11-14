@@ -32,7 +32,8 @@ function fail(message: string): never {
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 10;
 export const HAND_SIZE = 7;
-export const DEFAULT_OPTIONS: UnoOptions = { targetScore: 500 };
+/** Par défaut : une seule manche, puis on relance quand tout le monde est prêt. */
+export const DEFAULT_OPTIONS: UnoOptions = { targetScore: null };
 
 const COLOR_NAMES: Record<UnoColor, string> = { red: "rouge", yellow: "jaune", green: "vert", blue: "bleu" };
 
@@ -126,6 +127,7 @@ export function createUno(players: NewPlayer[], options: Partial<UnoOptions> = {
     round: 0,
     roundResult: null,
     winner: null,
+    ready: [],
     rng: seed | 0,
     log: [],
     logCounter: 0,
@@ -211,6 +213,7 @@ function startRound(c: Ctx) {
   const s = c.s;
   s.round++;
   s.roundResult = null;
+  s.ready = [];
   s.direction = 1;
   s.drawn = null;
   s.pendingWild4 = null;
@@ -323,7 +326,7 @@ export function applyUno(state: UnoState, playerId: PlayerId, action: UnoAction)
   const p = player(s, playerId);
   if (!p) fail("Joueur inconnu.");
   if (p.left) fail("Vous avez quitté la partie.");
-  if (s.phase === "gameOver" && action.type !== "leave") fail("La partie est terminée.");
+  if (s.phase === "gameOver" && action.type !== "leave" && action.type !== "ready") fail("La partie est terminée.");
 
   const isCurrent = s.players[s.current]!.id === p.id;
   // Dès que le joueur suivant agit, il est trop tard pour attraper l'oubli du « UNO ».
@@ -485,8 +488,19 @@ export function applyUno(state: UnoState, playerId: PlayerId, action: UnoAction)
       break;
     }
 
-    case "nextRound": {
-      if (s.phase !== "roundOver") fail("La manche n'est pas finie.");
+    case "ready": {
+      if (s.phase !== "roundOver" && s.phase !== "gameOver") fail("La manche n'est pas finie.");
+      if (s.ready.includes(p.id)) break;
+      s.ready.push(p.id);
+      c.events.push({ type: "ready", player: p.id });
+      const everyone = s.players.filter((pl) => !pl.left).every((pl) => s.ready.includes(pl.id));
+      if (!everyone) break;
+      if (s.phase === "gameOver") {
+        // Nouvelle partie avec les mêmes joueurs.
+        for (const pl of s.players) pl.score = 0;
+        s.winner = null;
+        log(c, "Tout le monde est prêt : nouvelle partie !");
+      }
       s.dealer = nextIndex(s, s.dealer);
       startRound(c);
       break;
@@ -520,6 +534,13 @@ export function applyUno(state: UnoState, playerId: PlayerId, action: UnoAction)
         turnStarted(c);
       }
       if (s.players[s.dealer]!.left) s.dealer = nextIndex(s, s.dealer);
+      // Fin de manche : si tous les joueurs restants étaient prêts, on relance.
+      if ((s.phase === "roundOver" || s.phase === "gameOver") && s.ready.length > 0 && alive.every((pl) => s.ready.includes(pl.id))) {
+        if (s.phase === "gameOver") for (const pl of s.players) pl.score = 0;
+        s.winner = null;
+        s.dealer = nextIndex(s, s.dealer);
+        startRound(c);
+      }
       break;
     }
 

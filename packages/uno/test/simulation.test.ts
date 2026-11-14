@@ -20,7 +20,7 @@ function check(s: UnoState) {
 
 function move(s: UnoState): [string, UnoAction] {
   const cur = s.players[s.current]!;
-  if (s.phase === "roundOver") return [cur.id, { type: "nextRound" }];
+  if (s.phase === "roundOver") return [pick(s.players.filter((p) => !p.left && !s.ready.includes(p.id))).id, { type: "ready" }];
   if (s.phase === "startColor") return [cur.id, { type: "chooseColor", color: pick(COLORS) }];
   if (s.phase === "challenge") return [cur.id, r() < 0.3 ? { type: "challenge" } : { type: "acceptDraw4" }];
   if (s.unoTarget && r() < 0.3) {

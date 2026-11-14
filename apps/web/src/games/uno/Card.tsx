@@ -34,6 +34,7 @@ export function CardFace({
   onClick,
   className = "",
   title,
+  dataId,
 }: {
   card: UnoCard;
   size?: "sm" | "md" | "lg";
@@ -41,6 +42,7 @@ export function CardFace({
   onClick?: () => void;
   className?: string;
   title?: string;
+  dataId?: number;
 }) {
   const wild = card.kind === "wild" || card.kind === "wild4";
   const bg = wild ? "#14152b" : CARD_COLORS[card.color!];
@@ -53,6 +55,7 @@ export function CardFace({
       onClick={onClick}
       title={title}
       aria-label={title}
+      data-card={dataId}
     >
       <span className="corner tl">{sym || "★"}</span>
       <span className="oval">

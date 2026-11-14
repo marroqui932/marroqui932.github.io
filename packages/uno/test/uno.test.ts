@@ -10,7 +10,7 @@ function card(kind: UnoCard["kind"], color: UnoColor | null, value: number | nul
 
 /** Partie maîtrisée : on impose les mains et la carte du dessus. */
 function setup(n: number, hands: UnoCard[][], top: UnoCard, current = 0): UnoState {
-  const s = createUno(players(n), {}, 1);
+  const s = createUno(players(n), { targetScore: 500 }, 1);
   s.players.forEach((p, i) => {
     p.hand = hands[i] ?? [];
     p.handCount = p.hand.length;
@@ -211,13 +211,38 @@ describe("fin de manche et score", () => {
     s = act(s, "p0", { type: "play", cardId: 1 });
     expect(s.phase).toBe("roundOver");
     expect(s.players[0]!.score).toBe(7 + 20 + 50);
-    s = act(s, "p1", { type: "nextRound" });
+    s = act(s, "p1", { type: "ready" });
+    expect(s.phase).toBe("roundOver");
+    s = act(s, "p0", { type: "ready" });
+    s = act(s, "p2", { type: "ready" });
     expect(s.round).toBe(2);
     expect(s.players.every((p) => p.hand.length === 7)).toBe(true);
   });
 
+  it("une seule manche par défaut, puis nouvelle partie quand tous sont prêts", () => {
+    let s = createUno(players(2), {}, 4);
+    expect(s.options.targetScore).toBeNull();
+    s.players[0]!.hand = [card("number", "red", 1, 1)];
+    s.players[0]!.handCount = 1;
+    s.players[0]!.saidUno = true;
+    s.discard = [card("number", "red", 5, 2)];
+    s.currentColor = "red";
+    s.current = 0;
+    s.phase = "play";
+    s.drawn = null;
+    s = act(s, "p0", { type: "play", cardId: 1 });
+    expect(s.phase).toBe("gameOver");
+    s = act(s, "p0", { type: "ready" });
+    expect(s.ready).toEqual(["p0"]);
+    s = act(s, "p1", { type: "ready" });
+    expect(s.phase).toBe("play");
+    expect(s.players.every((p) => p.score === 0)).toBe(true);
+    expect(s.ready).toEqual([]);
+  });
+
   it("partie gagnée à 500 points", () => {
     let s = setup(2, [[card("number", "red", 1, 1)], [card("wild", null, null, 2)]], card("number", "red", 5));
+    s.options.targetScore = 500;
     s.players[0]!.score = 460;
     s.players[0]!.saidUno = true;
     s = act(s, "p0", { type: "play", cardId: 1 });
