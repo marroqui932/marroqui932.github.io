@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { currentPlayer, groupHasBuildings, mortgageValue, type GameState, type Player, type TradeSide } from "@monopoly/engine";
 import { money, useCanAct, useGame } from "../store";
+import { TokenIcon } from "./TokenIcon";
 
 const empty = (): TradeSide => ({ cash: 0, properties: [], jailCards: 0 });
 
@@ -217,29 +218,144 @@ export function TradeList({ game }: { game: GameState }) {
   );
 }
 
-/** Les échanges que les autres sont en train de préparer, visibles en direct. */
-export function TradeDrafts({ game }: { game: GameState }) {
+/** Ce que donne un côté de l'échange, en « cartes » lisibles. */
+function SideItems({ game, side, live }: { game: GameState; side: TradeSide; live?: boolean }) {
+  const items: JSX.Element[] = [];
+  if (side.cash > 0) {
+    items.push(
+      <div key="cash" className="ts-cash">
+        {money(game, side.cash)}
+      </div>,
+    );
+  }
+  for (const pos of side.properties) {
+    const sq = game.theme.squares[pos]!;
+    const color = sq.kind === "street" ? game.theme.groupColors[sq.group] : sq.kind === "railroad" ? "#343a40" : "#8d99ae";
+    const mortgaged = game.properties[pos]?.mortgaged;
+    items.push(
+      <div key={pos} className={`ts-deed ${mortgaged ? "mortgaged" : ""}`}>
+        <span className="band" style={{ background: color }} />
+        <span className="nm">{sq.name}</span>
+        <span className="val">
+          {"price" in sq ? money(game, sq.price) : ""}
+          {mortgaged ? " · hypothéquée" : ` · hyp. ${money(game, mortgageValue(game, pos))}`}
+        </span>
+      </div>,
+    );
+  }
+  if (side.jailCards > 0) {
+    items.push(
+      <div key="jail" className="ts-deed">
+        <span className="band" style={{ background: "#ffb347" }} />
+        <span className="nm">🗝️ Libéré de prison ×{side.jailCards}</span>
+      </div>,
+    );
+  }
+  return <div className="ts-items">{items.length ? items : <div className="ts-empty">{live ? "rien pour l'instant" : "rien"}</div>}</div>;
+}
+
+/** Grande fenêtre d'échange au centre de l'écran. */
+function TradeStage({
+  game,
+  fromId,
+  toId,
+  give,
+  take,
+  title,
+  live,
+  children,
+}: {
+  game: GameState;
+  fromId: string;
+  toId: string;
+  give: TradeSide;
+  take: TradeSide;
+  title: string;
+  live?: boolean;
+  children?: React.ReactNode;
+}) {
+  const from = game.players.find((p) => p.id === fromId);
+  const to = game.players.find((p) => p.id === toId);
+  if (!from || !to) return null;
+  const head = (p: Player) => (
+    <div className="ts-who">
+      <span className="avatar small" style={{ background: p.color }}>
+        <TokenIcon token={p.token} size={16} />
+      </span>
+      <b>{p.name}</b>&nbsp;donne
+    </div>
+  );
+  return (
+    <div className={`trade-stage panel ${live ? "live" : ""}`}>
+      <div className="ts-title">
+        {live && <span className="pen">✍️</span>}
+        {title}
+      </div>
+      <div className="ts-cols">
+        <div className="ts-col">
+          {head(from)}
+          <SideItems game={game} side={give} live={live} />
+        </div>
+        <div className="ts-swap" aria-hidden>
+          ⇄
+        </div>
+        <div className="ts-col">
+          {head(to)}
+          <SideItems game={game} side={take} live={live} />
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Au centre de l'écran : l'échange qu'un autre joueur est en train de préparer
+ * (en direct), puis l'offre reçue avec les boutons pour répondre.
+ */
+export function TradeCenter({ game }: { game: GameState }) {
   const drafts = useGame((s) => s.drafts);
   const me = useGame((s) => s.me);
-  const entries = Object.entries(drafts).filter(([from]) => from !== me);
-  if (entries.length === 0) return null;
-  return (
-    <div className="panel trade-list drafting">
-      {entries.map(([fromId, d]) => {
-        const from = game.players.find((p) => p.id === fromId);
-        const to = game.players.find((p) => p.id === d.to);
-        if (!from || !to) return null;
-        return (
-          <div key={fromId} className="trade-item">
-            <div className="drafting-head">
-              <span className="pen">✍️</span>
-              <b>{from.name}</b>&nbsp;prépare un échange avec&nbsp;<b>{to.id === me ? "toi" : to.name}</b>
-            </div>
-            <div>Donne : {describe(game, d.give)}</div>
-            <div>Demande : {describe(game, d.take)}</div>
+  const dispatch = useGame((s) => s.dispatch);
+  const mode = useGame((s) => s.mode);
+
+  // Une offre qui m'est adressée passe en priorité.
+  const offer = mode !== "local" ? game.trades.find((t) => t.to === me) : undefined;
+  if (offer) {
+    const from = game.players.find((p) => p.id === offer.from);
+    return (
+      <div className="trade-center">
+        <TradeStage game={game} fromId={offer.from} toId={offer.to} give={offer.give} take={offer.take} title={`${from?.name} te propose un échange`}>
+          <div className="ts-actions">
+            <button className="btn" onClick={() => dispatch(offer.to, { type: "rejectTrade", tradeId: offer.id })}>
+              Refuser
+            </button>
+            <button className="btn ok big" onClick={() => dispatch(offer.to, { type: "acceptTrade", tradeId: offer.id })}>
+              Accepter
+            </button>
           </div>
-        );
-      })}
+        </TradeStage>
+      </div>
+    );
+  }
+
+  const entry = Object.entries(drafts).find(([from]) => from !== me);
+  if (!entry) return null;
+  const [fromId, d] = entry;
+  const from = game.players.find((p) => p.id === fromId);
+  const to = game.players.find((p) => p.id === d.to);
+  if (!from || !to) return null;
+  return (
+    <div className="trade-center passive">
+      <TradeStage
+        game={game}
+        fromId={fromId}
+        toId={d.to}
+        give={d.give}
+        take={d.take}
+        live
+        title={`${from.name} prépare un échange avec ${to.id === me ? "toi" : to.name}…`}
+      />
     </div>
   );
 }

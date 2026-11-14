@@ -45,9 +45,14 @@ export function playEvents(events: GameEvent[], state: GameState): Timeline {
   const jailedAfter = new Map(state.players.map((p) => [p.id, p.inJail]));
   const times: number[] = [];
   const hops: number[] = [];
+  /** Instant où le pion passe sur la case Départ pendant le dernier déplacement. */
+  let goTime: number | null = null;
 
   for (const e of events) {
-    times.push(cursor);
+    // Le salaire de la case Départ tombe quand le pion passe dessus, pas à l'arrivée.
+    const isSalary = e.type === "passedGo" || (e.type === "cashChanged" && e.reason === "case Départ");
+    times.push(isSalary && goTime !== null ? goTime : cursor);
+    if (e.type === "passedGo") goTime = null;
     if (e.type === "diceRolled") {
       anim.dice = { a: e.dice.a, b: e.dice.b, rollId: anim.dice.rollId + 1, startedAt: cursor };
       cursor += DICE_DURATION;
@@ -57,13 +62,18 @@ export function playEvents(events: GameEvent[], state: GameState): Timeline {
       const goingToJail = e.direct && e.to === 10 && e.steps === 0;
       if (!e.direct && Math.abs(e.steps) <= 12) {
         const dir = Math.sign(e.steps);
+        goTime = null;
         for (let k = 1; k <= Math.abs(e.steps); k++) {
-          pa.queue.push({ pos: (((e.from + dir * k) % 40) + 40) % 40, hop: true, inJail: false });
+          const cell = (((e.from + dir * k) % 40) + 40) % 40;
+          pa.queue.push({ pos: cell, hop: true, inJail: false });
           hops.push(cursor + k * HOP_DURATION);
+          if (cell === 0 && dir > 0) goTime = cursor + k * HOP_DURATION;
         }
         cursor += Math.abs(e.steps) * HOP_DURATION;
       } else {
         pa.queue.push({ pos: e.to, hop: false, inJail: goingToJail ? (jailedAfter.get(e.player) ?? true) : false });
+        // Glissade directe (carte) : on considère qu'il passe Départ à mi-chemin.
+        goTime = e.steps > 0 && e.from + e.steps >= 40 ? cursor + GLIDE_DURATION * 0.5 : null;
         cursor += GLIDE_DURATION;
       }
       anim.pawns.set(e.player, pa);

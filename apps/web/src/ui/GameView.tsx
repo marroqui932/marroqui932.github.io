@@ -11,7 +11,7 @@ import { TOKENS } from "../tokens";
 import { TokenIcon } from "./TokenIcon";
 import { ActionArea } from "./Actions";
 import { Deed } from "./Deed";
-import { TradeDrafts, TradeList, TradeModal } from "./Trade";
+import { TradeCenter, TradeList, TradeModal } from "./Trade";
 
 /** Vrai tant que les animations (dés, pions) ne sont pas finies. */
 export function useBusy(): boolean {
@@ -105,11 +105,11 @@ export function GameView({ game }: { game: GameState }) {
 
       <div className="overlay side">
         {selected !== null && <Deed game={game} position={selected} />}
-        <TradeDrafts game={game} />
         <TradeList game={game} />
         {showLog && <Log game={game} />}
       </div>
 
+      <TradeCenter game={game} />
       <Notifications />
       <ActionArea game={game} />
 
@@ -216,7 +216,7 @@ function Players({ game }: { game: GameState }) {
                   </span>
                   <span className="token">{TOKENS.find((t) => t.id === p.token)?.label}</span>
                 </div>
-                {p.bankrupt ? <div className="cash">Faillite</div> : <Cash value={p.cash} currency={game.theme.currency} />}
+                {p.bankrupt ? <div className="cash">Faillite</div> : <Cash playerId={p.id} cash={p.cash} currency={game.theme.currency} />}
               </div>
             </div>
             {!p.bankrupt && offline(p.id) && (
@@ -296,8 +296,26 @@ function OwnedColumns({ game, playerId, onSelect }: { game: GameState; playerId:
   );
 }
 
-/** Montant qui défile jusqu'à sa nouvelle valeur, vert si ça monte, rouge si ça baisse. */
-function Cash({ value, currency }: { value: number; currency: string }) {
+/**
+ * Argent d'un joueur. Un paiement n'est compté qu'au moment où le pion arrive
+ * sur la case ; le montant défile alors jusqu'à sa nouvelle valeur.
+ */
+function Cash({ playerId, cash, currency }: { playerId: string; cash: number; currency: string }) {
+  const pending = useGame((s) => s.pendingCash);
+  const [, tick] = useState(0);
+  const t = nowSec();
+  const mine = pending.filter((c) => c.player === playerId && c.at > t);
+  const value = cash - mine.reduce((sum, c) => sum + c.delta, 0);
+  const next = mine.length ? Math.min(...mine.map((c) => c.at)) : null;
+  useEffect(() => {
+    if (next === null) return;
+    const id = setTimeout(() => tick((n) => n + 1), Math.max(0, (next - nowSec()) * 1000) + 15);
+    return () => clearTimeout(id);
+  }, [next, pending]);
+  return <CashCounter value={value} currency={currency} />;
+}
+
+function CashCounter({ value, currency }: { value: number; currency: string }) {
   const [shown, setShown] = useState(value);
   const [trend, setTrend] = useState<"" | "up" | "down">("");
   const from = useRef(value);
@@ -357,7 +375,7 @@ function CardPopupView({ game }: { game: GameState }) {
   const cardId = card?.id;
   useEffect(() => {
     if (!shown) return;
-    const id = setTimeout(closeCard, POPUP_SECONDS * 1000);
+    const id = setTimeout(closeCard, CARD_SECONDS * 1000);
     return () => clearTimeout(id);
   }, [shown, cardId, closeCard]);
   if (!card || wait > 0) return null;
@@ -380,7 +398,7 @@ function CardPopupView({ game }: { game: GameState }) {
         <button className="btn primary" onClick={closeCard} autoFocus>
           OK
         </button>
-        <span className="timer" style={{ animationDuration: `${POPUP_SECONDS}s` }} />
+        <span className="timer" style={{ animationDuration: `${CARD_SECONDS}s` }} />
       </div>
     </div>
   );
@@ -400,8 +418,10 @@ function CardText({ text }: { text: string }) {
   return <p>{text}</p>;
 }
 
-/** Durée d'affichage des notifications et des cartes, sauf clic avant. */
-export const POPUP_SECONDS = 3;
+/** Durée d'affichage des notifications, sauf clic avant. */
+export const POPUP_SECONDS = 1.5;
+/** Durée d'affichage d'une carte Chance / Caisse, sauf clic avant. */
+export const CARD_SECONDS = 3;
 
 /** Notifications au centre de l'écran : un clic les ferme, sinon elles partent au bout de 3 s. */
 function Notifications() {

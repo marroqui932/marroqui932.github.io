@@ -51,6 +51,8 @@ interface Store {
 
   /** Notifications affichées au centre de l'écran. */
   notes: Note[];
+  /** Mouvements d'argent pas encore « arrivés » à l'écran (le pion n'est pas encore sur la case). */
+  pendingCash: { player: PlayerId; delta: number; at: number }[];
   /** Échanges en cours de préparation par les autres joueurs (en ligne). */
   drafts: Record<PlayerId, TradeDraft>;
   /** Partage mon brouillon d'échange avec les autres (null = fermé). */
@@ -145,6 +147,7 @@ function setUrlRoom(code: string | null) {
 
 function resetAnim(game: GameState | null) {
   useFx.setState({ list: [] });
+  useGame.setState({ pendingCash: [] });
   anim.pawns.clear();
   anim.busyUntil = 0;
   if (game?.dice) anim.dice = { a: game.dice.a, b: game.dice.b, rollId: 0, startedAt: -10 };
@@ -169,6 +172,14 @@ export const useGame = create<Store>((set, get) => {
       card = { id: ++cardId, deck: drawn.deck, text: drawn.text, player: drawn.player, showAt: Math.min(end, (times[idx] ?? end) + 0.05) };
     }
     const { me, mode } = get();
+    const nowT = nowSec();
+    const pendingCash = [
+      ...get().pendingCash.filter((c) => c.at > nowT),
+      ...events.flatMap((e, i) =>
+        e.type === "cashChanged" && (times[i] ?? 0) > nowT ? [{ player: e.player, delta: e.delta, at: times[i]! }] : [],
+      ),
+    ];
+    set({ pendingCash });
     const fresh = buildFeedback(state, events, timeline, me, mode !== "local");
     buildFx(state, events, timeline);
     const now = nowSec();
@@ -312,6 +323,7 @@ export const useGame = create<Store>((set, get) => {
     net: null,
     rejected: null,
     notes: [],
+    pendingCash: [],
     drafts: {},
     selected: null,
     card: null,
